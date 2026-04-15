@@ -1,0 +1,35 @@
+R_DEF: Internal format may change without notice
+local
+color black
+color primaryColor
+color primaryDarkColor
+color primaryLightColor
+color primaryTextColor
+color secondaryColor
+color secondaryDarkColor
+color secondaryLightColor
+color secondaryTextColor
+color white
+drawable ic_launcher
+id btnAiScan
+id btnExitRescuer
+id btnRescuerMode
+id btnSos
+id layoutRescuerDashboard
+id layoutUserDashboard
+id scrollViewLogs
+id tvConnectionStatus
+id tvMessageLog
+id tvRecentTitle
+id tvRescuerDesc
+id tvRescuerLogs
+id tvRescuerTitle
+layout activity_main
+string app_name
+string btn_rescuer_mode
+string sos_button
+string status_connected
+string status_disconnected
+string title_messages
+style Base.Theme.DisasterResponseApp
+style Theme.DisasterResponseApp

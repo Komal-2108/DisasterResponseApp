@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="primaryColor">#0D1117</color>
+    <color name="primaryDarkColor">#000000</color>
+    <color name="primaryLightColor">#161B22</color>
+    <color name="primaryTextColor">#C9D1D9</color>
+    <color name="secondaryColor">#DA3633</color>
+    <color name="secondaryDarkColor">#9F000A</color>
+    <color name="secondaryLightColor">#FF6B5E</color>
+    <color name="secondaryTextColor">#FFFFFF</color>
+    <color name="white">#FFFFFFFF</color>
+    <string name="app_name">Disaster Response App</string>
+    <string name="btn_rescuer_mode">Toggle Rescuer Mode</string>
+    <string name="sos_button">SEND SOS</string>
+    <string name="status_connected">Status: Connected to Mesh</string>
+    <string name="status_disconnected">Status: Disconnected</string>
+    <string name="title_messages">Recent SOS Signals</string>
+    <style name="Base.Theme.DisasterResponseApp" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primaryColor</item>
+        <item name="colorPrimaryVariant">@color/primaryDarkColor</item>
+        <item name="colorOnPrimary">@color/primaryTextColor</item>
+        
+        <item name="colorSecondary">@color/secondaryColor</item>
+        <item name="colorSecondaryVariant">@color/secondaryDarkColor</item>
+        <item name="colorOnSecondary">@color/secondaryTextColor</item>
+        
+        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+    </style>
+    <style name="Theme.DisasterResponseApp" parent="Base.Theme.DisasterResponseApp"/>
+</resources>

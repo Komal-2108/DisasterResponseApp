@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Disaster Response App</string>
+    <string name="sos_button">SEND SOS</string>
+    <string name="status_disconnected">Status: Disconnected</string>
+    <string name="status_connected">Status: Connected to Mesh</string>
+    <string name="title_messages">Recent SOS Signals</string>
+    <string name="btn_rescuer_mode">Toggle Rescuer Mode</string>
+</resources>
