@@ -11,4 +11,5 @@
     <color name="secondaryDarkColor">#9F000A</color>
     <color name="primaryTextColor">#C9D1D9</color>
     <color name="secondaryTextColor">#FFFFFF</color>
+    <color name="cardBackground">#161B22</color>
 </resources>

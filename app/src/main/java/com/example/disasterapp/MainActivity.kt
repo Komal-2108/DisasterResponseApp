@@ -2,11 +2,13 @@ package com.example.disasterapp
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AlertDialog
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.net.wifi.p2p.WifiP2pDeviceList
-import android.net.wifi.p2p.WifiP2pManager
+import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -15,36 +17,64 @@ import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
-import android.graphics.Bitmap
+import android.speech.RecognizerIntent
+import java.util.Locale
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.example.disasterapp.network.P2PBroadcastReceiver
-import com.example.disasterapp.network.WiFiDirectManager
+import com.example.disasterapp.network.MeshNetworkService
+import com.example.disasterapp.ai.GeminiEmergencyAssistant
+import com.example.disasterapp.ai.VoskSpeechEngine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
-
-    private val intentFilter = IntentFilter().apply {
-        addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
-        addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
-        addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
-        addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION)
-    }
-
-    private lateinit var channel: WifiP2pManager.Channel
-    private lateinit var manager: WifiP2pManager
-    private lateinit var receiver: P2PBroadcastReceiver
-    private lateinit var wifiDirectManager: WiFiDirectManager
     
     private lateinit var tvConnectionStatus: TextView
     private lateinit var tvMessageLog: TextView
     private lateinit var layoutUserDashboard: View
     private lateinit var layoutRescuerDashboard: View
     private lateinit var tvRescuerLogs: TextView
+    private lateinit var geminiAssistant: GeminiEmergencyAssistant
+    private var voskEngine: VoskSpeechEngine? = null
+
+    // Phase 4: Duplicate Detection Set
+    private val processedMessages = java.util.HashSet<String>()
+
+    // Local Broadcast Receiver natively parsing events from the Background Foreground Service
+    private val meshReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                MeshNetworkService.BROADCAST_MESSAGE -> {
+                    val incomingMessage = intent.getStringExtra("payload") ?: return
+                    handleIncomingPayload(incomingMessage)
+                }
+                MeshNetworkService.BROADCAST_STATUS -> {
+                    val status = intent.getStringExtra("status") ?: return
+                    tvConnectionStatus.text = status
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        
+        geminiAssistant = GeminiEmergencyAssistant(this)
+        
+        // Initialize VOSK engine independently
+        voskEngine = VoskSpeechEngine(this) { isReady ->
+            runOnUiThread {
+                if (isReady) {
+                    Toast.makeText(this, "VOSK Speech Engine Ready!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "VOSK Model failed to load. Please place zip in assets/model", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
 
         tvConnectionStatus = findViewById(R.id.tvConnectionStatus)
         tvMessageLog = findViewById(R.id.tvMessageLog)
@@ -52,17 +82,16 @@ class MainActivity : AppCompatActivity() {
         layoutRescuerDashboard = findViewById(R.id.layoutRescuerDashboard)
         tvRescuerLogs = findViewById(R.id.tvRescuerLogs)
 
-        manager = getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
-        channel = manager.initialize(this, mainLooper, null)
-        receiver = P2PBroadcastReceiver(manager, channel, this)
-        wifiDirectManager = WiFiDirectManager(manager, channel, this)
-
         findViewById<Button>(R.id.btnSos).setOnClickListener {
             checkPermissionsAndTriggerSos("MANUAL SOS BEACON SENT")
         }
         
         findViewById<Button>(R.id.btnAiScan).setOnClickListener {
             triggerAiHazardScan()
+        }
+
+        findViewById<Button>(R.id.btnFirstAidGuide).setOnClickListener {
+            startActivity(Intent(this, FirstAidActivity::class.java))
         }
 
         findViewById<Button>(R.id.btnRescuerMode).setOnClickListener {
@@ -74,6 +103,47 @@ class MainActivity : AppCompatActivity() {
         }
         
         requestRequiredPermissions()
+    }
+
+    private fun handleIncomingPayload(incomingMessage: String) {
+        val idMatch = Regex("\\[ID:(.*?)\\]").find(incomingMessage)
+        val ttlMatch = Regex("\\[TTL:(\\d+)\\]").find(incomingMessage)
+        
+        if (idMatch != null && ttlMatch != null) {
+            val msgId = idMatch.groupValues[1]
+            
+            if (!processedMessages.contains(msgId)) {
+                processedMessages.add(msgId)
+                
+                val cleanMsg = incomingMessage.replace(Regex("\\[ID:.*?\\]\\[TTL:\\d+\\] "), "")
+                val rescuerLog = "\n[MESH RELAY NODE] ${cleanMsg}\n"
+                tvRescuerLogs.text = tvRescuerLogs.text.toString() + rescuerLog
+                
+                val rescuerScrollView = tvRescuerLogs.parent as? android.widget.ScrollView
+                rescuerScrollView?.post { rescuerScrollView.fullScroll(View.FOCUS_DOWN) }
+                
+                Toast.makeText(this@MainActivity, "Nearby Mesh: Received Signal!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val filter = IntentFilter().apply {
+            addAction(MeshNetworkService.BROADCAST_MESSAGE)
+            addAction(MeshNetworkService.BROADCAST_STATUS)
+        }
+        // Use RECEIVER_NOT_EXPORTED for high security in modern Android
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(meshReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(meshReceiver, filter)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        unregisterReceiver(meshReceiver)
     }
 
     private fun toggleRescuerMode(enabled: Boolean) {
@@ -96,9 +166,7 @@ class MainActivity : AppCompatActivity() {
                 btnAi.text = "Run AI Hazard Scan"
                 btnAi.isEnabled = true
                 
-                // Simulate varying AI results based on the captured image
                 val hazards = listOf(
-                    "Safe Zone. No structural hazards detected.", 
                     "Safe Zone. No structural hazards detected.", 
                     "Warning: Debris Obstruction Detected"
                 )
@@ -124,10 +192,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun requestRequiredPermissions() {
         val requiredPerms = mutableListOf(
-            Manifest.permission.ACCESS_FINE_LOCATION
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.RECORD_AUDIO
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requiredPerms.add(Manifest.permission.NEARBY_WIFI_DEVICES)
+            requiredPerms.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            requiredPerms.add(Manifest.permission.BLUETOOTH_CONNECT)
+            requiredPerms.add(Manifest.permission.BLUETOOTH_SCAN)
+            requiredPerms.add(Manifest.permission.BLUETOOTH_ADVERTISE)
         }
         
         val missingPerms = requiredPerms.filter { 
@@ -137,7 +212,7 @@ class MainActivity : AppCompatActivity() {
         if (missingPerms.isNotEmpty()) {
             requestPermissionLauncher.launch(missingPerms.toTypedArray())
         } else {
-            startDiscovery()
+            startNearbyMeshBackgroundService()
         }
     }
 
@@ -145,28 +220,58 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.all { it.value }) {
-            startDiscovery()
+            startNearbyMeshBackgroundService()
         } else {
-            Toast.makeText(this, "Permissions required for offline networking", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Permissions explicitly required for offline Play Services networking", Toast.LENGTH_LONG).show()
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private fun startDiscovery() {
+    private val enableBtLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            Toast.makeText(this, "Bluetooth Enabled automatically for Mesh.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Bluetooth denied. Mesh will only use Wi-Fi Direct.", Toast.LENGTH_SHORT).show()
+        }
+        startMeshServiceInternal()
+    }
+
+    private fun startNearbyMeshBackgroundService() {
+        // Airplane Mode Safety Checks
         val locationManager = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
         if (!locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)) {
-            tvConnectionStatus.text = "Status: Discovery Failed (GPS is OFF)"
-            Toast.makeText(this, "CRITICAL: Please turn ON your phone's Location (GPS) to use Mesh Networking!", Toast.LENGTH_LONG).show()
+            tvConnectionStatus.text = "Status: Nearby Mesh Failed (GPS is OFF)"
+            Toast.makeText(this, "CRITICAL: Location (GPS) must be ON to allow local radio scanning!", Toast.LENGTH_LONG).show()
+            return
+        }
+        
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+        if (!wifiManager.isWifiEnabled) {
+            Toast.makeText(this, "WARNING: Wi-Fi is OFF! Mesh severely limited.", Toast.LENGTH_LONG).show()
+        }
+        
+        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
+        val bluetoothAdapter = bluetoothManager.adapter
+        val isBtEnabled = bluetoothAdapter != null && bluetoothAdapter.isEnabled
+        
+        if (!isBtEnabled && bluetoothAdapter != null) {
+            val enableBtIntent = Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE)
+            enableBtLauncher.launch(enableBtIntent)
             return
         }
 
-        wifiDirectManager.discoverPeers(
-            onSuccess = { tvConnectionStatus.text = "Status: Scanning Network" },
-            onFailure = { reason -> 
-                val reasonText = if(reason == 2) "BUSY / GPS OFF (Code: 2)" else "Code: $reason"
-                tvConnectionStatus.text = "Status: Discovery Failed ($reasonText)" 
-            }
-        )
+        if (!wifiManager.isWifiEnabled && !isBtEnabled) {
+            tvConnectionStatus.text = "Status: Mesh Failed. All Hardware Antennas OFF (Airplane Mode?)"
+            return
+        }
+
+        startMeshServiceInternal()
+    }
+
+    private fun startMeshServiceInternal() {
+        // Launch the autonomous Background Service instead of direct coupling
+        val serviceIntent = Intent(this, MeshNetworkService::class.java)
+        ContextCompat.startForegroundService(this, serviceIntent)
+        tvConnectionStatus.text = "Status: Initializing Independent Background Mesh..."
     }
 
     @SuppressLint("MissingPermission")
@@ -179,35 +284,24 @@ class MainActivity : AppCompatActivity() {
         val lon = location?.longitude ?: 0.0
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
         
-        val logEntry = "\n[$timestamp] \uD83D\uDEA8 $messageType\n   Location: $lat, $lon\n   Peers Reached: 0 (No active mesh)"
+        val msgId = UUID.randomUUID().toString()
+        val formattedPayload = "[ID:$msgId][TTL:10] [$timestamp] $messageType at $lat, $lon"
+        
+        processedMessages.add(msgId)
+        
+        val logEntry = "\n[$timestamp] \uD83D\uDEA8 $messageType\n   Location: $lat, $lon"
         tvMessageLog.text = tvMessageLog.text.toString() + "\n" + logEntry
 
         val scrollView = tvMessageLog.parent as? android.widget.ScrollView
-        scrollView?.post {
-            scrollView.fullScroll(android.view.View.FOCUS_DOWN)
-        }
+        scrollView?.post { scrollView.fullScroll(View.FOCUS_DOWN) }
         
-        // Also add to rescuer dashboard for Phase 8 demonstration
-        val rescuerLog = "\n[HIGH PRIORITY] $timestamp - $messageType\nLocal Mesh Node: Active | Coordination: $lat, $lon\n"
+        val rescuerLog = "\n[HIGH PRIORITY ORIGIN] $timestamp - $messageType\nLocal Mesh Node: Active | Coordination: $lat, $lon\n"
         tvRescuerLogs.text = tvRescuerLogs.text.toString() + rescuerLog
-    }
-
-    fun onPeersAvailable(peers: WifiP2pDeviceList) {
-        val peerCount = peers.deviceList.size
-        if (peerCount > 0) {
-            tvConnectionStatus.text = "Status: Connected to Mesh ($peerCount nodes)"
-        } else {
-            tvConnectionStatus.text = "Status: No peers found yet"
+        
+        // PUSH OUTWARD VIA BACKGROUND SERVICE (Which natively handles Google Nearby Caching + Sync arrays)
+        val serviceIntent = Intent(this, MeshNetworkService::class.java).apply {
+            putExtra("BROADCAST_PAYLOAD", formattedPayload)
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        registerReceiver(receiver, intentFilter)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        unregisterReceiver(receiver)
+        ContextCompat.startForegroundService(this, serviceIntent)
     }
 }

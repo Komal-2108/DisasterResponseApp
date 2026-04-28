@@ -1,3 +1,0 @@
-com.example.disasterapp.test
-style WhiteBackgroundDialogTheme
-style WhiteBackgroundTheme
