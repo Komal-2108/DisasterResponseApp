@@ -86,6 +86,10 @@ class MainActivity : AppCompatActivity() {
             checkPermissionsAndTriggerSos("MANUAL SOS BEACON SENT")
         }
         
+        findViewById<Button>(R.id.btnVoiceSos).setOnClickListener {
+            triggerVoiceSos()
+        }
+        
         findViewById<Button>(R.id.btnAiScan).setOnClickListener {
             triggerAiHazardScan()
         }
@@ -102,7 +106,75 @@ class MainActivity : AppCompatActivity() {
             toggleRescuerMode(false)
         }
         
+        findViewById<View>(R.id.btnRefreshNetwork).setOnClickListener {
+            Toast.makeText(this, "Flushing and Restarting Mesh Antennas...", Toast.LENGTH_SHORT).show()
+            tvConnectionStatus.text = "Status: Re-syncing Antennas..."
+            val serviceIntent = Intent(this, MeshNetworkService::class.java)
+            stopService(serviceIntent)
+            
+            Handler(Looper.getMainLooper()).postDelayed({
+                startNearbyMeshBackgroundService()
+            }, 1000)
+        }
+        
         requestRequiredPermissions()
+    }
+
+    private fun triggerVoiceSos() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "Microphone permission required for offline Voice SOS", Toast.LENGTH_SHORT).show()
+            requestPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+            return
+        }
+        
+        val btnVoiceSos = findViewById<Button>(R.id.btnVoiceSos)
+        
+        if (voskEngine?.isListening == true) {
+            voskEngine?.stopListening()
+            btnVoiceSos.text = "Voice SOS"
+            Toast.makeText(this, "Voice SOS Cancelled", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        if (voskEngine == null) {
+            Toast.makeText(this, "Loading Offline Language Models...", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        btnVoiceSos.text = "Listening... Tap to Stop"
+        
+        voskEngine?.startListening { transcribedText ->
+            runOnUiThread {
+                btnVoiceSos.text = "Voice SOS"
+                if (transcribedText.startsWith("ERROR")) {
+                    Toast.makeText(this, transcribedText, Toast.LENGTH_LONG).show()
+                    checkPermissionsAndTriggerSos("MANUAL SOS BEACON SENT")
+                    return@runOnUiThread
+                }
+                
+                // Process through local Gemini NPU!
+                CoroutineScope(Dispatchers.Main).launch {
+                    try {
+                        val aiSummary = geminiAssistant.summarizeSosWithNano(transcribedText)
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Transmit Distress Signal?")
+                            .setMessage("Raw Audio Input:\n\"$transcribedText\"\n\nOptimized Payload:\n\"$aiSummary\"")
+                            .setPositiveButton("Send Optimized") { _, _ ->
+                                checkPermissionsAndTriggerSos("VOICE SOS: $aiSummary")
+                            }
+                            .setNeutralButton("Send Raw") { _, _ ->
+                                checkPermissionsAndTriggerSos("VOICE SOS: $transcribedText")
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                        
+                    } catch (e: Exception) {
+                        Toast.makeText(this@MainActivity, "Gemini processor busy", Toast.LENGTH_SHORT).show()
+                        checkPermissionsAndTriggerSos("VOICE SOS: $transcribedText")
+                    }
+                }
+            }
+        }
     }
 
     private fun handleIncomingPayload(incomingMessage: String) {

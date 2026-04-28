@@ -49,13 +49,25 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/tvStatusTitle" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRefreshNetwork"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="8dp"
+            app:icon="@android:drawable/ic_popup_sync"
+            app:iconTint="@color/secondaryTextColor"
+            app:layout_constraintBottom_toBottomOf="@id/topBarBg"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="@id/topBarBg" />
+
         <!-- SOS Pulse Background Wrapper -->
         <FrameLayout
             android:id="@+id/sosPulseWrapper"
             android:layout_width="300dp"
             android:layout_height="300dp"
             android:background="@drawable/bg_sos_pulse"
-            app:layout_constraintBottom_toTopOf="@id/toolsRow"
+            app:layout_constraintBottom_toTopOf="@id/btnVoiceSos"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/topBarBg">
@@ -75,6 +87,22 @@
                 app:backgroundTint="@color/secondaryColor"
                 app:cornerRadius="100dp" />
         </FrameLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnVoiceSos"
+            android:layout_width="wrap_content"
+            android:layout_height="64dp"
+            android:text="Voice SOS"
+            android:textColor="@color/white"
+            app:backgroundTint="#C62828"
+            app:cornerRadius="32dp"
+            app:icon="@android:drawable/ic_btn_speak_now"
+            app:iconTint="@color/white"
+            android:layout_marginBottom="16dp"
+            app:layout_constraintBottom_toTopOf="@id/toolsRow"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/sosPulseWrapper" />
 
         <!-- Tools Row Grid -->
         <LinearLayout

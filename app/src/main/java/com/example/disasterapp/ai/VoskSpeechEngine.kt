@@ -28,9 +28,15 @@ class VoskSpeechEngine(private val context: Context, private val onModelReady: (
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val destDir = File(context.getExternalFilesDir(null), "vosk-model")
-                if (!destDir.exists() || destDir.list()?.isEmpty() == true) {
-                    copyAssetFolder(context.assets, "model", destDir.absolutePath)
+                
+                // --- HARD CACHE CLEAR ---
+                // Deletes the stagnant Hindi model from the phone's internal storage
+                // so the new English model from the assets folder is forcefully loaded.
+                if (destDir.exists()) {
+                    destDir.deleteRecursively()
                 }
+                
+                copyAssetFolder(context.assets, "model", destDir.absolutePath)
 
                 // Bind the native C++ engine dynamically to the extracted disk path
                 model = Model(destDir.absolutePath)
